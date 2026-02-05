@@ -1,0 +1,21 @@
+{
+  "google_drive": {
+    "credentials_file": "credentials.json"
+  },
+  "subreddits": [
+    "memes",
+    "dankmemes",
+    "wholesomememes",
+    "MemeEconomy",
+    "196",
+    "meirl"
+  ],
+  "sort_by": "top",
+  "time_filter": "day",
+  "limit": 50,
+  "min_upvotes": 50,
+  "max_post_age_hours": 24,
+  "download_folder": "memes",
+  "drive_folder_name": "Reddit Memes",
+  "delete_after_upload": true
+}

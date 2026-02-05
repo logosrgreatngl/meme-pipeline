@@ -1,0 +1,10 @@
+{
+  "scrape_reddit": true,
+  "scrape_tiktok": true,
+  "post_to_instagram": true,
+  "content_ratio": {
+    "reddit": 1,
+    "tiktok": 1
+  },
+  "posts_per_day": 2
+}

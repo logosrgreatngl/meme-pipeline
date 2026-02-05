@@ -1,0 +1,36 @@
+{
+  "content_filters": {
+    "nsfw_threshold": 0.50,
+    "enable_filtering": true,
+    "blocked_categories": [
+      "nsfw content",
+      "sexual content",
+      "nudity",
+      "revealing clothing",
+      "adult content",
+      "suggestive",
+      "explicit",
+      "inappropriate"
+    ],
+    "allowed_categories": [
+      "relatable meme",
+      "funny meme",
+      "trending meme",
+      "viral content",
+      "text meme",
+      "reaction meme",
+      "wholesome meme",
+      "dank meme",
+      "shitpost meme",
+      "popular culture reference",
+      "gaming meme",
+      "tech meme"
+    ]
+  },
+  "custom_filters": {
+    "min_score_to_post": 40,
+    "prefer_text_memes": true,
+    "prefer_high_quality": true,
+    "max_age_hours": 24
+  }
+}

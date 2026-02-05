@@ -1,0 +1,37 @@
+# Create .gitignore
+cat > .gitignore << 'EOF'
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+logs/
+*.log
+
+# Downloaded content
+memes/
+tiktok_downloads/
+
+# Secrets - DO NOT PUSH
+config_final.json
+.env
+token.pickle
+credentials.json
+
+# History files
+*_history.json
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+EOF
