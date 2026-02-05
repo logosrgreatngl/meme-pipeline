@@ -1,10 +1,25 @@
 import asyncio
 import logging
+import os
+import shutil
 from pathlib import Path
 from master_pipeline import MasterPipeline
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def cleanup_files():
+    """Delete downloaded files after pipeline completes"""
+    folders_to_clean = ['memes', 'tiktok_downloads']
+    
+    for folder in folders_to_clean:
+        if os.path.exists(folder):
+            try:
+                shutil.rmtree(folder)
+                os.makedirs(folder, exist_ok=True)
+                logger.info(f"🧹 Cleaned up {folder}/")
+            except Exception as e:
+                logger.error(f"Cleanup error for {folder}: {e}")
 
 async def run_once():
     Path("logs").mkdir(exist_ok=True)
@@ -27,9 +42,12 @@ async def run_once():
         logger.error("Bot failed to connect")
         return
     
-    await pipeline.run_cycle()
-    await pipeline.discord.bot.close()
-    logger.info("✅ Done!")
+    try:
+        await pipeline.run_cycle()
+    finally:
+        await pipeline.discord.bot.close()
+        cleanup_files()
+        logger.info("✅ Done!")
 
 if __name__ == "__main__":
     asyncio.run(run_once())
