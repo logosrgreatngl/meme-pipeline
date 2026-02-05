@@ -1,0 +1,64 @@
+name: Meme Pipeline
+
+on:
+  schedule:
+    - cron: '0 */12 * * *'
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Create config
+        run: |
+          cat > config_final.json << CONF
+          {
+            "reddit": {
+              "subreddits": ["memes", "dankmemes", "wholesomememes"],
+              "sort_by": "top",
+              "time_filter": "day",
+              "limit": 50,
+              "min_upvotes": 50,
+              "download_folder": "memes",
+              "scrape_interval_hours": 24
+            },
+            "tiktok": {"enabled": false},
+            "ai_selector": {
+              "min_score_threshold": 0.70,
+              "max_daily_selections": 2
+            },
+            "discord": {
+              "bot_token": "${{ secrets.DISCORD_BOT_TOKEN }}",
+              "guild_id": "${{ secrets.DISCORD_GUILD_ID }}",
+              "channel_id": "${{ secrets.DISCORD_CHANNEL_ID }}",
+              "post_interval_seconds": 60,
+              "enable_reactions": true
+            },
+            "caption_generator": {
+              "use_ai": false,
+              "style": "casual",
+              "max_hashtags": 10,
+              "include_emoji": true
+            },
+            "google_drive": {"enabled": false},
+            "history": {"discord_posted": "discord_posted_history.json"},
+            "logging": {"level": "INFO", "file": "logs/pipeline.log"}
+          }
+          CONF
+      
+      - name: Create directories
+        run: mkdir -p logs memes
+      
+      - name: Run pipeline
+        run: python run_once.py
