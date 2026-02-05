@@ -7,7 +7,7 @@ import concurrent.futures
 
 # Import existing modules
 from ai_meme_selector import MemeSelector
-from reddit_scraper_simple import RedditMemeScraper
+from imgur_scraper import RedditMemeScraper
 from caption_generator import CaptionGenerator
 from discord_bot import DiscordPublisher
 
