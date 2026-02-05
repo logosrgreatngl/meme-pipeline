@@ -14,7 +14,12 @@ class RedditMemeScraper:
         
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
         })
     
     def load_config(self, config_file):
@@ -29,9 +34,19 @@ class RedditMemeScraper:
             }
     
     def get_reddit_json(self, subreddit, sort_by='top', limit=50):
-        url = f"https://www.reddit.com/r/{subreddit}/{sort_by}.json?limit={limit}&t=day"
+        # Try old.reddit.com which is less restrictive
+        url = f"https://old.reddit.com/r/{subreddit}/{sort_by}.json?limit={limit}&t=day"
+        
         try:
+            time.sleep(2)  # Rate limiting
             response = self.session.get(url, timeout=30)
+            
+            if response.status_code == 403:
+                # Try www.reddit.com as fallback
+                url = f"https://www.reddit.com/r/{subreddit}/{sort_by}.json?limit={limit}&t=day&raw_json=1"
+                time.sleep(2)
+                response = self.session.get(url, timeout=30)
+            
             response.raise_for_status()
             data = response.json()
             return data.get('data', {}).get('children', [])
@@ -79,7 +94,8 @@ class RedditMemeScraper:
             else:
                 os.remove(filepath)
                 return None
-        except:
+        except Exception as e:
+            print(f"Download error: {e}")
             return None
     
     def scrape_subreddit(self, subreddit, sort_by='top', limit=50):
@@ -87,6 +103,7 @@ class RedditMemeScraper:
         
         posts = self.get_reddit_json(subreddit, sort_by, limit)
         if not posts:
+            print(f"  No posts found for r/{subreddit}")
             return []
         
         downloaded = []
@@ -127,7 +144,7 @@ class RedditMemeScraper:
                     })
                     print(f"  ✓ {post.get('title', '')[:50]}... (↑{upvotes})")
                 
-                time.sleep(0.5)
+                time.sleep(1)
                 
             except Exception as e:
                 continue
