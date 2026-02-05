@@ -5,13 +5,11 @@ from pathlib import Path
 import sys
 import concurrent.futures
 
-# Import existing modules
 from ai_meme_selector import MemeSelector
-from imgur_scraper import RedditMemeScraper
+from imgur_scraper import ImgurMemeScraper
 from caption_generator import CaptionGenerator
 from discord_bot import DiscordPublisher
 
-# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -30,31 +28,28 @@ class MasterPipeline:
         with open(config_path, 'r') as f:
             self.config = json.load(f)
         
-        self.scraper = RedditMemeScraper(config_file="config_no_api.json")
+        # Use Imgur scraper instead of Reddit
+        self.scraper = ImgurMemeScraper()
         self.selector = MemeSelector()
         self.caption_gen = CaptionGenerator(config_path)
         self.discord = DiscordPublisher(config_path)
         
         self.ai_config = self.config.get("ai_selector", {})
         self.min_score = self.ai_config.get("min_score_threshold", 0.65)
-        self.max_daily = self.ai_config.get("max_daily_selections", 10)
-        self.post_interval = self.config.get("discord", {}).get("post_interval_seconds", 300)
+        self.max_daily = self.ai_config.get("max_daily_selections", 2)
+        self.post_interval = self.config.get("discord", {}).get("post_interval_seconds", 60)
         
-        # Thread pool for blocking operations
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         
         logger.info("✅ Pipeline initialized successfully")
     
-    def _scrape_subreddit_sync(self, subreddit, sort_by, limit):
-        """Synchronous scraping (runs in thread)"""
-        return self.scraper.scrape_subreddit(subreddit, sort_by=sort_by, limit=limit)
+    def _scrape_sync(self, limit):
+        return self.scraper.scrape_subreddit(limit=limit)
     
     def _score_meme_sync(self, path):
-        """Synchronous scoring (runs in thread)"""
         return self.selector.score_meme(path)
     
     async def run_cycle(self):
-        """Execute one complete pipeline cycle"""
         logger.info("=" * 60)
         logger.info("Starting pipeline cycle")
         logger.info("=" * 60)
@@ -63,31 +58,22 @@ class MasterPipeline:
         loop = asyncio.get_event_loop()
         
         try:
-            # Step 1: Scrape Reddit (in thread to avoid blocking)
-            logger.info("📥 Scraping Reddit...")
+            logger.info("📥 Scraping Imgur...")
             
-            subreddits = self.config.get("reddit", {}).get("subreddits", ["memes", "dankmemes"])
-            sort_by = self.config.get("reddit", {}).get("sort_by", "hot")
-            limit = self.config.get("reddit", {}).get("limit", 50)
+            limit = self.config.get("reddit", {}).get("limit", 30)
             
-            for subreddit in subreddits:
-                try:
-                    # Run scraping in thread pool
-                    memes = await loop.run_in_executor(
-                        self.executor,
-                        self._scrape_subreddit_sync,
-                        subreddit, sort_by, limit
-                    )
-                    
-                    if memes:
-                        for meme in memes:
-                            meme["source"] = "reddit"
-                            meme["subreddit"] = subreddit
-                            meme["local_path"] = meme["filepath"]
-                        all_content.extend(memes)
-                        logger.info(f"  r/{subreddit}: {len(memes)} memes")
-                except Exception as e:
-                    logger.error(f"  r/{subreddit} failed: {e}")
+            memes = await loop.run_in_executor(
+                self.executor,
+                self._scrape_sync,
+                limit
+            )
+            
+            if memes:
+                for meme in memes:
+                    meme["source"] = "imgur"
+                    meme["subreddit"] = "imgur"
+                    meme["local_path"] = meme["filepath"]
+                all_content.extend(memes)
             
             logger.info(f"Total scraped: {len(all_content)} memes")
             
@@ -95,13 +81,11 @@ class MasterPipeline:
                 logger.warning("No content scraped. Ending cycle.")
                 return
             
-            # Step 2: AI scoring (in thread)
             logger.info("🤖 AI scoring content...")
             scored_content = []
             
             for item in all_content:
                 try:
-                    # Run scoring in thread pool
                     score = await loop.run_in_executor(
                         self.executor,
                         self._score_meme_sync,
@@ -117,7 +101,6 @@ class MasterPipeline:
                     logger.error(f"Scoring error: {e}")
                     continue
             
-            # Sort by score, take top N
             scored_content.sort(key=lambda x: x["ai_score"], reverse=True)
             selected = scored_content[:self.max_daily]
             
@@ -127,7 +110,6 @@ class MasterPipeline:
                 logger.warning("No content met quality threshold.")
                 return
             
-            # Step 3: Caption + Discord
             logger.info("📝 Posting to Discord...")
             
             posted = 0
@@ -147,7 +129,7 @@ class MasterPipeline:
                         ai_score=item["ai_score"],
                         caption=caption,
                         metadata={
-                            "source": "Reddit",
+                            "source": "Imgur",
                             "subreddit": item.get("subreddit", ""),
                             "upvotes": item.get("upvotes", 0)
                         }
@@ -158,7 +140,6 @@ class MasterPipeline:
                         logger.info(f"✅ Posted {posted}/{len(selected)}")
                         
                         if posted < len(selected):
-                            logger.info(f"⏳ Waiting {self.post_interval}s...")
                             await asyncio.sleep(self.post_interval)
                     
                 except Exception as e:
@@ -169,46 +150,6 @@ class MasterPipeline:
             
         except Exception as e:
             logger.error(f"Pipeline error: {e}", exc_info=True)
-    
-    async def start_bot_and_pipeline(self):
-        """Start Discord bot and run pipeline cycles"""
-        bot_token = self.config.get("discord", {}).get("bot_token")
-        
-        if not bot_token or bot_token == "YOUR_BOT_TOKEN_HERE":
-            logger.error("❌ Discord bot token not configured!")
-            return
-        
-        async def run_bot():
-            await self.discord.bot.start(bot_token)
-        
-        bot_task = asyncio.create_task(run_bot())
-        
-        # Wait for bot to be ready
-        for i in range(30):
-            await asyncio.sleep(1)
-            if self.discord.bot.is_ready():
-                logger.info("✅ Discord bot connected!")
-                break
-        else:
-            logger.error("Discord bot failed to connect after 30s")
-            return
-        
-        # Run pipeline cycles
-        logger.info("Starting pipeline cycles...")
-        
-        try:
-            while True:
-                await self.run_cycle()
-                
-                scrape_interval = self.config.get("reddit", {}).get("scrape_interval_hours", 6)
-                logger.info(f"⏳ Waiting {scrape_interval} hours until next cycle...")
-                await asyncio.sleep(scrape_interval * 3600)
-                
-        except KeyboardInterrupt:
-            logger.info("Pipeline stopped by user")
-        finally:
-            self.executor.shutdown(wait=False)
-            await self.discord.bot.close()
 
 
 def main():
@@ -217,9 +158,9 @@ def main():
     pipeline = MasterPipeline()
     
     try:
-        asyncio.run(pipeline.start_bot_and_pipeline())
+        asyncio.run(pipeline.run_cycle())
     except KeyboardInterrupt:
-        logger.info("Shutting down gracefully...")
+        logger.info("Shutting down...")
     except Exception as e:
         logger.error(f"Fatal error: {e}", exc_info=True)
         sys.exit(1)
