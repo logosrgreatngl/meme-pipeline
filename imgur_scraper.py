@@ -13,60 +13,76 @@ class ImgurMemeScraper:
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': '*/*',
         })
     
     def fetch_imgur_posts(self):
         """Fetch viral images from Imgur"""
         all_posts = []
         
-        # Use Imgur's public gallery endpoints
         urls = [
             'https://api.imgur.com/3/gallery/hot/viral/0.json',
             'https://api.imgur.com/3/gallery/top/viral/day/0.json',
         ]
         
+        headers = {
+            'Authorization': 'Client-ID 546c25a59c58ad7',
+        }
+        
         for url in urls:
             try:
                 time.sleep(1)
-                
-                # Imgur requires client ID in header
-                headers = {
-                    'Authorization': 'Client-ID 546c25a59c58ad7',
-                    'User-Agent': 'Mozilla/5.0',
-                }
-                
                 response = self.session.get(url, headers=headers, timeout=30)
                 
                 if response.status_code == 200:
                     data = response.json()
                     items = data.get('data', [])
+                    print(f"  Found {len(items)} items from Imgur")
                     
                     for item in items:
-                        # Skip albums and videos
-                        if item.get('is_album', False):
-                            continue
-                        if item.get('type', '').startswith('video'):
-                            continue
-                        
-                        # Get direct image link
-                        link = item.get('link', '')
-                        if link and any(ext in link for ext in ['.jpg', '.png', '.gif', '.jpeg']):
+                        try:
+                            # Handle albums - get first image
+                            if item.get('is_album', False):
+                                images = item.get('images', [])
+                                if images:
+                                    first_img = images[0]
+                                    link = first_img.get('link', '')
+                                    img_type = first_img.get('type', '')
+                                else:
+                                    continue
+                            else:
+                                link = item.get('link', '')
+                                img_type = item.get('type', '')
+                            
+                            # Skip videos
+                            if 'video' in img_type:
+                                continue
+                            
+                            # Must be an image
+                            if not link:
+                                continue
+                            
+                            if not any(ext in link.lower() for ext in ['.jpg', '.png', '.gif', '.jpeg', '.webp']):
+                                # Try adding .jpg
+                                if 'imgur.com' in link:
+                                    link = link + '.jpg'
+                                else:
+                                    continue
+                            
                             all_posts.append({
                                 'id': item.get('id', ''),
-                                'title': item.get('title', '') or '',
+                                'title': item.get('title', '') or 'Untitled',
                                 'link': link,
-                                'ups': item.get('ups', 0) or item.get('points', 0),
+                                'ups': item.get('ups', 0) or item.get('points', 0) or 0,
                             })
-                    
-                    print(f"  Found {len(items)} items from Imgur")
-                else:
-                    print(f"  Imgur returned {response.status_code}")
-                    
+                            
+                        except Exception as e:
+                            continue
+                            
             except Exception as e:
                 print(f"  Imgur fetch error: {e}")
                 continue
         
+        print(f"  Total valid posts: {len(all_posts)}")
         return all_posts
     
     def download_image(self, url, filename):
@@ -78,47 +94,45 @@ class ImgurMemeScraper:
             with open(filepath, 'wb') as f:
                 f.write(response.content)
             
-            if os.path.getsize(filepath) > 10000:
+            size = os.path.getsize(filepath)
+            if size > 5000:  # At least 5KB
                 return filepath
             else:
                 os.remove(filepath)
                 return None
         except Exception as e:
-            print(f"  Download error: {e}")
             return None
     
     def scrape_subreddit(self, subreddit='imgur', sort_by='top', limit=30):
-        """Scrape Imgur gallery"""
         print(f"\n📥 Scraping Imgur viral memes...")
         
         posts = self.fetch_imgur_posts()
         
         if not posts:
-            print("  No posts found")
+            print("  No posts found after filtering")
             return []
+        
+        print(f"  Attempting to download {min(len(posts), limit)} memes...")
         
         downloaded = []
         
         for post in posts[:limit]:
             try:
-                post_id = post.get('id', '')
+                post_id = post['id']
                 
                 if post_id in self.downloaded_ids:
                     continue
                 
-                title = post.get('title', '')
-                upvotes = post.get('ups', 0)
-                image_url = post.get('link', '')
-                
-                if not image_url:
-                    continue
+                title = post['title']
+                upvotes = post['ups']
+                image_url = post['link']
                 
                 # Determine extension
                 ext = '.jpg'
-                if '.png' in image_url:
-                    ext = '.png'
-                elif '.gif' in image_url:
-                    ext = '.gif'
+                for e in ['.png', '.gif', '.webp', '.jpeg']:
+                    if e in image_url.lower():
+                        ext = e
+                        break
                 
                 filename = f"imgur_{post_id}{ext}"
                 filepath = self.download_image(image_url, filename)
@@ -131,12 +145,11 @@ class ImgurMemeScraper:
                         'upvotes': upvotes,
                         'post_id': post_id
                     })
-                    print(f"  ✓ {title[:50]}... (↑{upvotes})")
+                    print(f"  ✓ {title[:40]}... (↑{upvotes})")
                 
-                time.sleep(0.5)
+                time.sleep(0.3)
                 
             except Exception as e:
-                print(f"  Error: {e}")
                 continue
         
         print(f"  Downloaded: {len(downloaded)} memes")
